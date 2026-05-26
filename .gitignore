@@ -1,0 +1,29 @@
+# Environment & Secrets — NEVER commit these
+.env
+credentials.json
+token_*.pickle
+*.pickle
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+arya-env/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Logs
+logs/
+*.log
+log.txt
+
+# OS
+.DS_Store
+Thumbs.db
