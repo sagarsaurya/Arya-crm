@@ -148,6 +148,31 @@ def send_bulk_emails(leads: list, update_callback=None) -> str:
     return result
 
 
+def send_direct_email(to_email: str, subject: str = None, body: str = None) -> str:
+    """Send email to any email address directly"""
+    try:
+        if not to_email or "@" not in to_email:
+            return "❌ Please provide a valid email address."
+
+        if not subject:
+            subject = "Message from ARYA"
+        if not body:
+            body = "Hi,\n\nThis is a message sent via ARYA.\n\nBest regards"
+
+        service = get_gmail_service()
+        message = MIMEMultipart()
+        message['To'] = to_email
+        message['Subject'] = subject
+        message.attach(MIMEText(body, 'plain'))
+
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        service.users().messages().send(userId='me', body={'raw': raw}).execute()
+
+        return f"✅ Email sent to *{to_email}*\n📧 Subject: {subject}"
+    except Exception as e:
+        return f"❌ Error sending email: {str(e)}"
+
+
 def check_reply(name: str, email: str) -> str:
     """Check if a contact has replied"""
     try:

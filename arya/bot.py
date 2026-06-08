@@ -8,7 +8,7 @@ from arya.crm import (
     add_lead, update_lead_status, add_note,
     get_todays_followups, get_lead_details, get_crm_summary
 )
-from arya.email_agent import send_followup_email, check_reply, send_bulk_emails
+from arya.email_agent import send_followup_email, check_reply, send_bulk_emails, send_direct_email
 from arya.campaign_email import send_campaign_to_all
 from arya.calendar_agent import book_meeting, get_todays_meetings, get_upcoming_meetings
 from arya.report import generate_daily_report
@@ -187,6 +187,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             response = send_bulk_emails(leads)
 
+    # ── DIRECT EMAIL (any address) ────────────────────────
+    elif intent == "email_direct":
+        to_email = details.get("email", "").strip()
+        subject = details.get("subject", "").strip()
+        body = details.get("body", "").strip()
+        if not to_email:
+            response = "❌ Please provide an email address to send to."
+        else:
+            response = send_direct_email(to_email, subject or None, body or None)
+
     # ── SEND EMAIL ────────────────────────────────────────
     elif intent == "email_send":
         from arya.crm import find_lead
@@ -255,7 +265,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif intent == "report":
         response = generate_daily_report()
 
-    # ── UNKNOWN ───────────────────────────────────────────
+    # ── CHAT / UNKNOWN ────────────────────────────────────
     else:
         response = intent_data.get("reply", "🤔 I didn't understand that. Type /help to see what I can do!")
 
