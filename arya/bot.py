@@ -3,7 +3,7 @@ import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
-from arya.brain import understand_intent
+from arya.brain import understand_intent, draft_email
 from arya.crm import (
     add_lead, update_lead_status, add_note,
     get_todays_followups, get_lead_details, get_crm_summary
@@ -22,6 +22,9 @@ logging.basicConfig(
 )
 
 OWNER_CHAT_ID = os.getenv("OWNER_CHAT_ID")
+
+# Pending email approvals store: chat_id -> {to, subject, body}
+pending_emails = {}
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -101,6 +104,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id != OWNER_CHAT_ID:
         await update.message.reply_text("⛔ Unauthorized access.")
         return
+
+    # ── EMAIL APPROVAL CHECK ──────────────────────────────
+    if chat_id in pending_emails:
+        msg_lower = user_message.lower().strip()
+        pending = pending_emails[chat_id]
+
+        if msg_lower in ["yes", "send", "ok", "approve", "confirmed", "confirm", "haan", "ha"]:
+            del pending_emails[chat_id]
+            result = send_direct_email(pending["to"], pending["subject"], pending["body"])
+            try:
+                await update.message.reply_text(result, parse_mode='Markdown')
+            except Exception:
+                await update.message.reply_text(result)
+            return
+
+        elif msg_lower in ["no", "cancel", "nahi", "nope", "don't send", "dont send"]:
+            del pending_emails[chat_id]
+            await update.message.reply_text("❌ Email cancelled. What else can I help you with?")
+            return
+
+        elif msg_lower.startswith("edit:") or msg_lower.startswith("change:"):
+            edit_instruction = user_message[5:].strip()
+            await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+            drafted = draft_email(pending["to"], edit_instruction)
+            pending_emails[chat_id] = {"to": pending["to"], "subject": drafted["subject"], "body": drafted["body"]}
+            preview = f"✏️ *Revised draft:*\n\n📧 *To:* {pending['to']}\n📌 *Subject:* {drafted['subject']}\n\n{drafted['body']}\n\n✅ Reply *yes* to send or *edit: [changes]* to revise again."
+            try:
+                await update.message.reply_text(preview, parse_mode='Markdown')
+            except Exception:
+                await update.message.reply_text(preview)
+            return
 
     # Show typing indicator
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
@@ -187,15 +221,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             response = send_bulk_emails(leads)
 
-    # ── DIRECT EMAIL (any address) ────────────────────────
+    # ── DIRECT EMAIL (draft + approval) ───────────────────
     elif intent == "email_direct":
         to_email = details.get("email", "").strip()
-        subject = details.get("subject", "").strip()
-        body = details.get("body", "").strip()
+        instruction = details.get("body", "").strip() or details.get("note", "").strip() or user_message
         if not to_email:
             response = "❌ Please provide an email address to send to."
         else:
-            response = send_direct_email(to_email, subject or None, body or None)
+            drafted = draft_email(to_email, instruction)
+            pending_emails[chat_id] = {"to": to_email, "subject": drafted["subject"], "body": drafted["body"]}
+            response = f"📝 *Here's your email draft:*\n\n📧 *To:* {to_email}\n📌 *Subject:* {drafted['subject']}\n\n{drafted['body']}\n\n✅ Reply *yes* to send\n✏️ Reply *edit: [what to change]* to revise\n❌ Reply *no* to cancel"
 
     # ── SEND EMAIL ────────────────────────────────────────
     elif intent == "email_send":

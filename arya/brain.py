@@ -95,6 +95,27 @@ def understand_intent(user_message: str) -> dict:
         }
 
 
+def draft_email(to_email: str, instruction: str) -> dict:
+    """Draft an email subject and body based on user instruction"""
+    try:
+        message = get_client().messages.create(
+            model="claude-opus-4-5",
+            max_tokens=512,
+            messages=[{
+                "role": "user",
+                "content": f"Write a professional email to {to_email}. Instruction: {instruction}. Return ONLY a JSON object with keys 'subject' and 'body'. Keep body under 100 words. Friendly and professional tone."
+            }]
+        )
+        text = message.content[0].text.strip()
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start != -1:
+            return json.loads(text[start:end])
+        return {"subject": "Following up", "body": text}
+    except Exception as e:
+        return {"subject": "Message", "body": f"Hi,\n\nPlease find my message below.\n\nBest regards"}
+
+
 def generate_email_body(name: str, history: str) -> str:
     """Generate a personalised follow-up email body using Claude"""
     try:
