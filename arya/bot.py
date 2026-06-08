@@ -269,7 +269,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         response = intent_data.get("reply", "🤔 I didn't understand that. Type /help to see what I can do!")
 
-    await update.message.reply_text(response, parse_mode='Markdown')
+    try:
+        await update.message.reply_text(response, parse_mode='Markdown')
+    except Exception:
+        await update.message.reply_text(response)
 
 
 def run_bot():

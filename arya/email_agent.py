@@ -168,7 +168,7 @@ def send_direct_email(to_email: str, subject: str = None, body: str = None) -> s
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
         service.users().messages().send(userId='me', body={'raw': raw}).execute()
 
-        return f"✅ Email sent to *{to_email}*\n📧 Subject: {subject}"
+        return f"✅ Email sent to {to_email}\n📧 Subject: {subject}"
     except Exception as e:
         return f"❌ Error sending email: {str(e)}"
 
