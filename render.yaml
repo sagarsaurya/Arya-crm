@@ -1,9 +1,7 @@
 services:
   - type: web
     name: arya-crm
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    runtime: docker
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
