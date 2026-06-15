@@ -7,9 +7,9 @@ from arya.brain import understand_intent, draft_email
 from arya.crm import (
     add_lead, update_lead_status, add_note,
     get_todays_followups, get_lead_details, get_crm_summary, set_next_followup, add_column,
-    bulk_update_status, get_all_leads
+    bulk_update_status, get_all_leads, auto_update_status_by_date
 )
-from arya.memory import remember_lead, get_last_lead
+from arya.memory import remember_lead, get_last_lead, save_conversation_history, load_conversation_history
 from arya.reminders import save_reminder, get_all_pending_reminders, get_todays_reminders, mark_reminder_done
 try:
     from arya.lead_export import send_leads_excel_email
@@ -249,7 +249,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Show typing indicator
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
-    # Understand intent via Claude (with conversation history)
+    # Load history from RAM; if empty (after restart) load from Google Sheets
+    if chat_id not in conversation_history:
+        conversation_history[chat_id] = load_conversation_history()
+
     history = conversation_history.get(chat_id, [])
     intent_data = understand_intent(user_message, history)
     intent = intent_data.get("intent", "unknown")
@@ -463,6 +466,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 response = add_column(col_name)
 
+        # ── AUTO STATUS BY DATE ───────────────────────────────
+        elif intent == "crm_auto_status":
+            response = auto_update_status_by_date()
+
         # ── LIST LEADS ────────────────────────────────────────
         elif intent == "crm_list":
             from arya.crm import get_leads_by_status
@@ -517,12 +524,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not response or not response.strip():
         response = intent_data.get("reply") or "🤔 I'm not sure what you meant — could you rephrase? For example, tell me the lead name and what you'd like to do."
 
-    # Save exchange to conversation history (keep last 10 messages = 5 exchanges)
+    # Save exchange to conversation history (RAM + Google Sheets for persistence)
     if chat_id not in conversation_history:
         conversation_history[chat_id] = []
     conversation_history[chat_id].append({"role": "user", "content": user_message})
     conversation_history[chat_id].append({"role": "assistant", "content": response})
-    conversation_history[chat_id] = conversation_history[chat_id][-10:]
+    conversation_history[chat_id] = conversation_history[chat_id][-20:]
+    # Persist to Sheets in background (don't block response)
+    import threading
+    threading.Thread(target=save_conversation_history, args=(conversation_history[chat_id],), daemon=True).start()
 
     try:
         await update.message.reply_text(response, parse_mode='Markdown')

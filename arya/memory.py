@@ -118,3 +118,23 @@ def get_last_lead() -> str:
     """Get the last lead that was discussed."""
     memory = load_memory()
     return memory.get("last_lead", "")
+
+
+def save_conversation_history(history: list) -> None:
+    """Persist last 20 conversation messages to Google Sheets."""
+    try:
+        save_memory("conversation_history", history[-20:])
+    except Exception:
+        pass
+
+
+def load_conversation_history() -> list:
+    """Load persisted conversation history from Google Sheets."""
+    try:
+        memory = load_memory()
+        history = memory.get("conversation_history", [])
+        if isinstance(history, list):
+            return history
+        return []
+    except Exception:
+        return []

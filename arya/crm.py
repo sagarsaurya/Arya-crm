@@ -289,6 +289,51 @@ def bulk_update_status(updates: list, target_column: str = "status") -> str:
         return f"❌ Error: {str(e)}"
 
 
+def auto_update_status_by_date() -> str:
+    """Auto-set Status based on Last Contact date:
+    contacted today/this week = New, 7-29 days = Warm, 30+ days = Cold, never = Cold
+    """
+    try:
+        service = get_sheets_service()
+        all_rows = get_all_leads()
+        today = datetime.now()
+        data = []
+        results = []
+
+        for i, row in enumerate(all_rows[1:], start=2):
+            if not row or not row[0]:
+                continue
+            name = row[0]
+            last_str = row[COLUMNS["last_contact"]] if len(row) > COLUMNS["last_contact"] else ""
+            new_status = "Cold"
+            if last_str:
+                for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y'):
+                    try:
+                        last_date = datetime.strptime(last_str.strip(), fmt)
+                        days = (today - last_date).days
+                        if days <= 7:
+                            new_status = "New"
+                        elif days <= 29:
+                            new_status = "Warm"
+                        else:
+                            new_status = "Cold"
+                        break
+                    except Exception:
+                        continue
+            data.append({'range': f"Sheet1!D{i}", 'values': [[new_status]]})
+            results.append(f"✅ {name} → {new_status}")
+
+        if data:
+            service.spreadsheets().values().batchUpdate(
+                spreadsheetId=SHEET_ID,
+                body={'valueInputOption': 'RAW', 'data': data}
+            ).execute()
+
+        return f"*Status auto-updated by Last Contact date:*\n" + "\n".join(results)
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+
 def add_column(column_name: str) -> str:
     """Add a new column header to the CRM sheet."""
     try:
