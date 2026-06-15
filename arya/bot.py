@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 from arya.brain import understand_intent, draft_email
 from arya.crm import (
     add_lead, update_lead_status, add_note,
-    get_todays_followups, get_lead_details, get_crm_summary, set_next_followup, add_column
+    get_todays_followups, get_lead_details, get_crm_summary, set_next_followup, add_column,
+    bulk_update_status, get_all_leads
 )
 from arya.memory import remember_lead, get_last_lead
 from arya.email_agent import send_followup_email, check_reply, send_bulk_emails, send_direct_email
@@ -153,7 +154,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     response = ""
 
-    # ── ADD LEAD ──────────────────────────────────────────
+    try:
+      # ── ADD LEAD ──────────────────────────────────────────
     if intent == "crm_add":
         name = details.get("name", "").strip()
         email = details.get("email", "").strip()
@@ -322,6 +324,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             response = send_campaign_to_all(leads)
 
+    # ── BULK STATUS UPDATE ────────────────────────────────
+    elif intent == "crm_bulk_update":
+        import json as _json
+        value = details.get("value", "")
+        note = details.get("note", "")
+        updates = []
+        # Handle "first N leads are X, rest are Y"
+        if isinstance(value, str) and value.startswith("first_"):
+            try:
+                count = int(value.split("_")[1])
+                hot_status = details.get("action", "Hot")
+                rest_status = note or "Warm"
+                all_leads = get_all_leads()[1:]  # skip header
+                for i, row in enumerate(all_leads):
+                    if row and row[0]:
+                        status = hot_status if i < count else rest_status
+                        updates.append((row[0], status))
+            except Exception:
+                pass
+        elif isinstance(value, list):
+            updates = [(item["name"], item["status"]) for item in value if "name" in item]
+        elif isinstance(value, str):
+            try:
+                parsed = _json.loads(value)
+                if isinstance(parsed, list):
+                    updates = [(item["name"], item["status"]) for item in parsed if "name" in item]
+            except Exception:
+                pass
+        if updates:
+            response = bulk_update_status(updates)
+        else:
+            response = intent_data.get("reply") or "❌ I couldn't figure out which leads to update. Please list them like: 'mark Raj as Hot and Priya as Warm'"
+
     # ── ADD COLUMN ────────────────────────────────────────
     elif intent == "crm_add_column":
         col_name = details.get("value", "").strip()
@@ -334,9 +369,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif intent == "report":
         response = generate_daily_report()
 
-    # ── CHAT / UNKNOWN ────────────────────────────────────
-    else:
-        response = intent_data.get("reply", "🤔 I didn't understand that. Type /help to see what I can do!")
+      # ── CHAT / UNKNOWN ────────────────────────────────────
+      else:
+          response = intent_data.get("reply", "🤔 I didn't understand that. Type /help to see what I can do!")
+
+    except Exception as e:
+        response = f"⚠️ Something went wrong: {str(e)}\n\nPlease try again."
 
     if not response or not response.strip():
         response = intent_data.get("reply") or "🤔 I didn't understand that. Type /help to see what I can do!"

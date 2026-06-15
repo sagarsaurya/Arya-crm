@@ -230,6 +230,34 @@ def get_leads_by_status(status_filter: str = "all") -> list:
     ]
 
 
+def bulk_update_status(updates: list) -> str:
+    """Update status for multiple leads. updates = [(name, status), ...]"""
+    try:
+        service = get_sheets_service()
+        leads = get_all_leads()
+        today = datetime.now().strftime('%d/%m/%Y')
+        results = []
+        data = []
+        for name, status in updates:
+            for i, row in enumerate(leads):
+                if row and row[0].lower() == name.lower():
+                    row_index = i + 1
+                    data.append({'range': f"Sheet1!D{row_index}", 'values': [[status]]})
+                    data.append({'range': f"Sheet1!E{row_index}", 'values': [[today]]})
+                    results.append(f"✅ {row[0]} → {status}")
+                    break
+            else:
+                results.append(f"❌ {name} not found")
+        if data:
+            service.spreadsheets().values().batchUpdate(
+                spreadsheetId=SHEET_ID,
+                body={'valueInputOption': 'RAW', 'data': data}
+            ).execute()
+        return "\n".join(results)
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+
 def add_column(column_name: str) -> str:
     """Add a new column header to the CRM sheet."""
     try:

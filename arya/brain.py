@@ -40,6 +40,7 @@ When the user sends a message, identify the intent and respond ONLY with a valid
 }
 
 Intent rules:
+- crm_bulk_update: user wants to update status of multiple leads at once (e.g. "first 3 leads are hot", "mark Raj and Priya as warm"). Put the list of updates in "value" as a JSON array like [{"name":"Raj","status":"Hot"},{"name":"Priya","status":"Warm"}]. If user says "first N leads", use "first_N" as value and include count in "note".
 - crm_add_column: user wants to add a new column to the Google Sheet CRM (e.g. "add column Budget", "add Source column"). Extract the column name into "value".
 - crm_followup: user wants to set or update the next follow-up date for a lead (e.g. "set follow up date for Raj to 20-06-2026", "next follow up for Sagar is Friday"). Extract name and date — convert to YYYY-MM-DD format.
 - email_direct: user wants to send email to a specific email address directly (e.g. "mail to raj@gmail.com", "send email to abc@gmail.com saying hello"). Extract email, subject, body from message.
