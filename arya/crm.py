@@ -258,8 +258,9 @@ def bulk_update_status(updates: list, target_column: str = "status") -> str:
                 col_index = i
                 break
         if col_index is None:
-            # Default to status column (D = index 3)
-            col_index = 3
+            # Log what headers exist to help debug
+            print(f"[bulk_update] Column '{target_column}' not found. Headers: {headers}", flush=True)
+            return f"❌ Column *{target_column}* not found in your sheet.\nExisting columns: {', '.join(headers)}"
 
         col_letter = _col_letter(col_index)
         results = []
