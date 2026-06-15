@@ -230,30 +230,60 @@ def get_leads_by_status(status_filter: str = "all") -> list:
     ]
 
 
-def bulk_update_status(updates: list) -> str:
-    """Update status for multiple leads. updates = [(name, status), ...]"""
+def _col_letter(index: int) -> str:
+    """Convert 0-based column index to sheet letter (A, B, ... Z, AA...)."""
+    result = ""
+    index += 1
+    while index:
+        index, rem = divmod(index - 1, 26)
+        result = chr(65 + rem) + result
+    return result
+
+
+def bulk_update_status(updates: list, target_column: str = "status") -> str:
+    """Update a column for multiple leads.
+    updates = [(name, value), ...]
+    target_column = column name from sheet header (e.g. 'status', 'lead category')
+    """
     try:
         service = get_sheets_service()
-        leads = get_all_leads()
+        all_rows = get_all_leads()
         today = datetime.now().strftime('%d/%m/%Y')
+
+        # Find target column index from header row
+        headers = all_rows[0] if all_rows else []
+        col_index = None
+        for i, h in enumerate(headers):
+            if h.strip().lower() == target_column.strip().lower():
+                col_index = i
+                break
+        if col_index is None:
+            # Default to status column (D = index 3)
+            col_index = 3
+
+        col_letter = _col_letter(col_index)
         results = []
         data = []
-        for name, status in updates:
-            for i, row in enumerate(leads):
-                if row and row[0].lower() == name.lower():
-                    row_index = i + 1
-                    data.append({'range': f"Sheet1!D{row_index}", 'values': [[status]]})
-                    data.append({'range': f"Sheet1!E{row_index}", 'values': [[today]]})
-                    results.append(f"✅ {row[0]} → {status}")
+
+        for name, value in updates:
+            for i, row in enumerate(all_rows):
+                if row and row[0].strip().lower() == name.strip().lower():
+                    row_num = i + 1
+                    data.append({'range': f"Sheet1!{col_letter}{row_num}", 'values': [[value]]})
+                    data.append({'range': f"Sheet1!E{row_num}", 'values': [[today]]})
+                    results.append(f"✅ {row[0]} → {value}")
                     break
             else:
                 results.append(f"❌ {name} not found")
+
         if data:
             service.spreadsheets().values().batchUpdate(
                 spreadsheetId=SHEET_ID,
                 body={'valueInputOption': 'RAW', 'data': data}
             ).execute()
-        return "\n".join(results)
+
+        col_display = headers[col_index] if col_index < len(headers) else target_column.title()
+        return f"*{col_display}* updated:\n" + "\n".join(results)
     except Exception as e:
         return f"❌ Error: {str(e)}"
 

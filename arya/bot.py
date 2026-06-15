@@ -382,32 +382,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             import json as _json
             value = details.get("value", "")
             note = details.get("note", "")
+            target_col = details.get("subject", "Status") or "Status"
             updates = []
             if isinstance(value, str) and value.startswith("first_"):
                 try:
                     count = int(value.split("_")[1])
-                    hot_status = details.get("action", "Hot")
-                    rest_status = note or "Warm"
+                    first_val = details.get("action", "Hot")
+                    rest_val = note or "Warm"
                     all_leads = get_all_leads()[1:]
                     for i, row in enumerate(all_leads):
                         if row and row[0]:
-                            status = hot_status if i < count else rest_status
-                            updates.append((row[0], status))
+                            updates.append((row[0], first_val if i < count else rest_val))
                 except Exception:
                     pass
             elif isinstance(value, list):
-                updates = [(item["name"], item["status"]) for item in value if "name" in item]
+                updates = [(item.get("name",""), item.get("status","")) for item in value if "name" in item]
             elif isinstance(value, str):
                 try:
                     parsed = _json.loads(value)
                     if isinstance(parsed, list):
-                        updates = [(item["name"], item["status"]) for item in parsed if "name" in item]
+                        updates = [(item.get("name",""), item.get("status","")) for item in parsed if "name" in item]
                 except Exception:
                     pass
             if updates:
-                response = bulk_update_status(updates)
+                response = bulk_update_status(updates, target_column=target_col)
             else:
-                response = intent_data.get("reply") or "❌ I couldn't figure out which leads to update. Please list them like: 'mark Raj as Hot and Priya as Warm'"
+                response = intent_data.get("reply") or "❌ I couldn't figure out which leads to update. Please say something like: 'mark Raj as Hot and Priya as Warm in Lead Category'"
 
         # ── ADD COLUMN ────────────────────────────────────────
         elif intent == "crm_add_column":
