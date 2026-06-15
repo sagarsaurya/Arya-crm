@@ -23,7 +23,7 @@ You have access to:
 When the user sends a message, identify the intent and respond ONLY with a valid JSON object like this:
 
 {
-  "intent": "crm_add" | "crm_update" | "crm_followup" | "crm_add_column" | "crm_read" | "email_send" | "email_direct" | "email_bulk" | "email_read" | "calendar_book" | "calendar_read" | "report" | "chat",
+  "intent": "crm_add" | "crm_update" | "crm_followup" | "crm_bulk_update" | "crm_add_column" | "crm_read" | "email_send" | "email_direct" | "email_bulk" | "email_read" | "calendar_book" | "calendar_read" | "reminder_set" | "reminder_read" | "report" | "chat",
   "details": {
     "name": "lead name if mentioned",
     "email": "email address if mentioned",
@@ -40,6 +40,8 @@ When the user sends a message, identify the intent and respond ONLY with a valid
 }
 
 Intent rules:
+- reminder_set: user wants to set a reminder for a future date (e.g. "remind me to call Raj on 20-06-2026", "remind me tomorrow at 10 AM to follow up"). Extract date (YYYY-MM-DD), time (HH:MM 24hr, empty if not given), and the reminder message into "note".
+- reminder_read: user wants to see their upcoming or pending reminders.
 - crm_bulk_update: user wants to update status of multiple leads at once (e.g. "first 3 leads are hot", "mark Raj and Priya as warm"). Put the list of updates in "value" as a JSON array like [{"name":"Raj","status":"Hot"},{"name":"Priya","status":"Warm"}]. If user says "first N leads", use "first_N" as value and include count in "note".
 - crm_add_column: user wants to add a new column to the Google Sheet CRM (e.g. "add column Budget", "add Source column"). Extract the column name into "value".
 - crm_followup: user wants to set or update the next follow-up date for a lead (e.g. "set follow up date for Raj to 20-06-2026", "next follow up for Sagar is Friday"). Extract name and date — convert to YYYY-MM-DD format.

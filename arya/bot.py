@@ -10,6 +10,7 @@ from arya.crm import (
     bulk_update_status, get_all_leads
 )
 from arya.memory import remember_lead, get_last_lead
+from arya.reminders import save_reminder, get_all_pending_reminders, get_todays_reminders, mark_reminder_done
 from arya.email_agent import send_followup_email, check_reply, send_bulk_emails, send_direct_email
 from arya.campaign_email import send_campaign_to_all
 from arya.calendar_agent import book_meeting, get_todays_meetings, get_upcoming_meetings
@@ -365,6 +366,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             response = add_column(col_name)
 
+    # ── SET REMINDER ──────────────────────────────────────
+    elif intent == "reminder_set":
+        date = details.get("date", "").strip()
+        time = details.get("time", "").strip()
+        message = details.get("note", "").strip() or user_message
+        if not date:
+            response = "❌ Please mention the date for the reminder."
+        else:
+            response = save_reminder(date, time, message)
+
+    # ── READ REMINDERS ────────────────────────────────────
+    elif intent == "reminder_read":
+        response = get_all_pending_reminders()
+
     # ── REPORT ────────────────────────────────────────────
     elif intent == "report":
         response = generate_daily_report()
@@ -385,6 +400,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(response)
 
 
+async def send_daily_reminders(app):
+    """Called every day at 9 AM — sends due reminders to Sagar."""
+    owner_id = os.getenv("OWNER_CHAT_ID")
+    if not owner_id:
+        return
+    due = get_todays_reminders()
+    if not due:
+        return
+    lines = ["🔔 *Good morning! Here are your reminders for today:*\n"]
+    for r in due:
+        time_part = f" at {r['time']}" if r['time'] and r['time'] != "09:00" else ""
+        lines.append(f"📝 {r['message']}{time_part}")
+        mark_reminder_done(r["row"])
+    message = "\n".join(lines)
+    try:
+        await app.bot.send_message(chat_id=owner_id, text=message, parse_mode='Markdown')
+    except Exception:
+        await app.bot.send_message(chat_id=owner_id, text=message)
+
+
 def run_bot():
     """Start ARYA bot"""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -400,6 +435,12 @@ def run_bot():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("campaign", campaign_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # 9 AM daily reminder scheduler
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
+    scheduler.add_job(send_daily_reminders, 'cron', hour=9, minute=0, args=[app])
+    scheduler.start()
 
     print("🤖 ARYA is running... Press Ctrl+C to stop")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
