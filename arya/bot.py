@@ -34,6 +34,9 @@ pending_emails = {}
 # Pending list delivery choice: chat_id -> {leads, filter_label, page}
 pending_lists = {}
 
+# Conversation history: chat_id -> [{role, content}, ...]
+conversation_history = {}
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
@@ -217,8 +220,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Show typing indicator
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
-    # Understand intent via Claude
-    intent_data = understand_intent(user_message)
+    # Understand intent via Claude (with conversation history)
+    history = conversation_history.get(chat_id, [])
+    intent_data = understand_intent(user_message, history)
     intent = intent_data.get("intent", "unknown")
     details = intent_data.get("details", {})
 
@@ -470,6 +474,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not response or not response.strip():
         response = intent_data.get("reply") or "🤔 I'm not sure what you meant — could you rephrase? For example, tell me the lead name and what you'd like to do."
+
+    # Save exchange to conversation history (keep last 10 messages = 5 exchanges)
+    if chat_id not in conversation_history:
+        conversation_history[chat_id] = []
+    conversation_history[chat_id].append({"role": "user", "content": user_message})
+    conversation_history[chat_id].append({"role": "assistant", "content": response})
+    conversation_history[chat_id] = conversation_history[chat_id][-10:]
 
     try:
         await update.message.reply_text(response, parse_mode='Markdown')

@@ -98,16 +98,20 @@ Always respond with ONLY the JSON object. No extra text before or after.
 """
 
 
-def understand_intent(user_message: str) -> dict:
+def understand_intent(user_message: str, history: list = None) -> dict:
     """Send user message to Claude and get intent + action"""
     try:
+        # Build messages with conversation history
+        messages = []
+        if history:
+            messages.extend(history[-6:])  # last 3 exchanges (6 messages)
+        messages.append({"role": "user", "content": user_message})
+
         message = get_client().messages.create(
             model="claude-opus-4-5",
             max_tokens=1024,
             system=SYSTEM_PROMPT,
-            messages=[
-                {"role": "user", "content": user_message}
-            ]
+            messages=messages
         )
 
         response_text = message.content[0].text.strip()
