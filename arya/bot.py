@@ -377,7 +377,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = f"⚠️ Something went wrong: {str(e)}\n\nPlease try again."
 
     if not response or not response.strip():
-        response = intent_data.get("reply") or "🤔 I didn't understand that. Type /help to see what I can do!"
+        response = intent_data.get("reply") or "🤔 I'm not sure what you meant — could you rephrase? For example, tell me the lead name and what you'd like to do."
 
     try:
         await update.message.reply_text(response, parse_mode='Markdown')
