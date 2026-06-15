@@ -46,6 +46,9 @@ pending_lists = {}
 # Pending promised actions: chat_id -> {type, ...params}
 pending_actions = {}
 
+# Pending lead collection: chat_id -> {name, email, phone, status, step}
+pending_leads = {}
+
 # Conversation history: chat_id -> [{role, content}, ...]
 conversation_history = {}
 
@@ -176,6 +179,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Cancelled. What else can I help you with?")
             return
 
+    # ── LEAD COLLECTION (multi-step) ──────────────────────
+    if chat_id in pending_leads:
+        pl = pending_leads[chat_id]
+        val = user_message.strip()
+        none_vals = ["none", "no", "skip", "n/a", "-", "nahi", "nope", "na"]
+        is_none = val.lower() in none_vals
+
+        if pl["step"] == "email":
+            pl["email"] = "" if is_none else val
+            pl["step"] = "phone"
+            await update.message.reply_text("📞 Phone number? _(or say 'none')_", parse_mode='Markdown')
+            return
+
+        elif pl["step"] == "phone":
+            pl["phone"] = "" if is_none else val
+            pl["step"] = "status"
+            await update.message.reply_text("📊 Status? _(New / Interested / Hot / Warm / Won / Lost — or say 'none' for New)_", parse_mode='Markdown')
+            return
+
+        elif pl["step"] == "status":
+            pl["status"] = "New" if is_none else val
+            # All collected — add the lead
+            del pending_leads[chat_id]
+            result = add_lead(pl["name"], pl["email"], pl["phone"], pl["status"])
+            remember_lead(pl["name"], "crm_add")
+            try:
+                await update.message.reply_text(result, parse_mode='Markdown')
+            except Exception:
+                await update.message.reply_text(result)
+            return
+
     # ── LEAD LIST DELIVERY CHOICE ─────────────────────────
     if chat_id in pending_lists:
         msg_lower = user_message.lower().strip()
@@ -272,10 +306,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name = details.get("name", "").strip()
             email = details.get("email", "").strip()
             phone = details.get("phone", "").strip()
+            status = details.get("value", "").strip()
+
             if not name:
-                response = "❌ Please provide at least a name.\nExample: _Add lead: Raj Sharma, raj@gmail.com, 9876543210_"
+                response = "❌ What's the lead's name?"
+            elif not email:
+                # Start multi-step collection
+                pending_leads[chat_id] = {"name": name, "email": "", "phone": phone, "status": status or "New", "step": "email"}
+                response = f"Got *{name}*! 📧 What's their email? _(or say 'none')_"
+            elif not phone:
+                pending_leads[chat_id] = {"name": name, "email": email, "phone": "", "status": status or "New", "step": "phone"}
+                response = f"📞 What's *{name}'s* phone number? _(or say 'none')_"
             else:
-                response = add_lead(name, email, phone)
+                response = add_lead(name, email, phone, status or "New")
                 remember_lead(name, intent)
 
         # ── UPDATE LEAD ───────────────────────────────────────
