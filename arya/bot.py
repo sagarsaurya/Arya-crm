@@ -188,14 +188,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         action = details.get("action", "").lower()
 
         if "followup" in action or "follow-up" in action or "today" in action:
-            leads = get_todays_followups()
-            if leads:
-                response = f"🔔 *Follow-ups due today — {len(leads)} leads:*\n"
-                for i, lead in enumerate(leads, 1):
-                    status = lead[3] if len(lead) > 3 else "Unknown"
-                    response += f"{i}. {lead[0]} — {status}\n"
+            if name:
+                # Asking about a specific lead's follow-up date
+                response = get_lead_details(name)
             else:
-                response = "✅ No follow-ups due today!"
+                leads = get_todays_followups()
+                if leads:
+                    response = f"🔔 *Follow-ups due today — {len(leads)} leads:*\n"
+                    for i, lead in enumerate(leads, 1):
+                        status = lead[3] if len(lead) > 3 else "Unknown"
+                        response += f"{i}. {lead[0]} — {status}\n"
+                else:
+                    response = "✅ No follow-ups due today!"
         elif "summary" in action or "all" in action or not name:
             response = get_crm_summary()
         else:
@@ -314,6 +318,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── CHAT / UNKNOWN ────────────────────────────────────
     else:
         response = intent_data.get("reply", "🤔 I didn't understand that. Type /help to see what I can do!")
+
+    if not response or not response.strip():
+        response = intent_data.get("reply") or "🤔 I didn't understand that. Type /help to see what I can do!"
 
     try:
         await update.message.reply_text(response, parse_mode='Markdown')
