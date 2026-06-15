@@ -11,6 +11,8 @@ from arya.crm import (
 )
 from arya.memory import remember_lead, get_last_lead
 from arya.reminders import save_reminder, get_all_pending_reminders, get_todays_reminders, mark_reminder_done
+from arya.lead_export import send_leads_excel_email
+from arya.morning_briefing import build_morning_message
 from arya.email_agent import send_followup_email, check_reply, send_bulk_emails, send_direct_email
 from arya.campaign_email import send_campaign_to_all
 from arya.calendar_agent import book_meeting, get_todays_meetings, get_upcoming_meetings
@@ -28,6 +30,9 @@ OWNER_CHAT_ID = os.getenv("OWNER_CHAT_ID")
 
 # Pending email approvals store: chat_id -> {to, subject, body}
 pending_emails = {}
+
+# Pending list delivery choice: chat_id -> {leads, filter_label, page}
+pending_lists = {}
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -137,6 +142,76 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(preview, parse_mode='Markdown')
             except Exception:
                 await update.message.reply_text(preview)
+            return
+
+    # ── LEAD LIST DELIVERY CHOICE ─────────────────────────
+    if chat_id in pending_lists:
+        msg_lower = user_message.lower().strip()
+        plist = pending_lists[chat_id]
+        leads = plist["leads"]
+        label = plist["filter_label"]
+        owner_email = os.getenv("OWNER_EMAIL", "aikigai12@gmail.com")
+
+        if msg_lower in ["1", "email", "excel", "send excel", "send to email"]:
+            del pending_lists[chat_id]
+            await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+            result = send_leads_excel_email(leads, owner_email, label)
+            try:
+                await update.message.reply_text(result, parse_mode='Markdown')
+            except Exception:
+                await update.message.reply_text(result)
+            return
+
+        elif msg_lower in ["2", "show", "show here", "show top 20", "telegram"]:
+            pending_lists[chat_id]["page"] = 0
+            page = 0
+            chunk = leads[page*20:(page+1)*20]
+            lines = [f"📋 *{label} leads — showing 1–{len(chunk)} of {len(leads)}:*\n"]
+            for i, lead in enumerate(chunk, 1):
+                name = lead[0] if lead else "?"
+                status = lead[3] if len(lead) > 3 else ""
+                lines.append(f"{page*20+i}. {name} — {status}")
+            if len(leads) > 20:
+                lines.append(f"\n_Reply *next* to see more_")
+            else:
+                del pending_lists[chat_id]
+            try:
+                await update.message.reply_text("\n".join(lines), parse_mode='Markdown')
+            except Exception:
+                await update.message.reply_text("\n".join(lines))
+            return
+
+        elif msg_lower in ["next", "more", "show more", "next 20"]:
+            plist["page"] = plist.get("page", 0) + 1
+            page = plist["page"]
+            chunk = leads[page*20:(page+1)*20]
+            if not chunk:
+                del pending_lists[chat_id]
+                await update.message.reply_text("✅ That's all the leads.")
+                return
+            lines = [f"📋 *{label} leads — showing {page*20+1}–{page*20+len(chunk)} of {len(leads)}:*\n"]
+            for i, lead in enumerate(chunk, 1):
+                name = lead[0] if lead else "?"
+                status = lead[3] if len(lead) > 3 else ""
+                lines.append(f"{page*20+i}. {name} — {status}")
+            if (page+1)*20 < len(leads):
+                lines.append(f"\n_Reply *next* to see more_")
+            else:
+                del pending_lists[chat_id]
+            try:
+                await update.message.reply_text("\n".join(lines), parse_mode='Markdown')
+            except Exception:
+                await update.message.reply_text("\n".join(lines))
+            return
+
+        elif msg_lower.startswith("3") or "filter" in msg_lower:
+            del pending_lists[chat_id]
+            await update.message.reply_text("🔍 Tell me the filter — e.g. *'hot leads not contacted in 7 days'* or *'warm leads with follow-up overdue'*", parse_mode='Markdown')
+            return
+
+        elif msg_lower in ["cancel", "no", "nahi"]:
+            del pending_lists[chat_id]
+            await update.message.reply_text("❌ Cancelled.")
             return
 
     # Show typing indicator
@@ -366,6 +441,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             response = add_column(col_name)
 
+    # ── LIST LEADS ────────────────────────────────────────
+    elif intent == "crm_list":
+        from arya.crm import get_leads_by_status
+        filter_val = details.get("value", "all").strip() or "all"
+        leads = get_leads_by_status(filter_val)
+        label = filter_val.title() if filter_val != "all" else "All"
+        count = len(leads)
+        if count == 0:
+            response = f"❌ No *{label}* leads found."
+        elif count <= 20:
+            lines = [f"📋 *{label} leads — {count} total:*\n"]
+            for i, lead in enumerate(leads, 1):
+                name = lead[0] if lead else "?"
+                status = lead[3] if len(lead) > 3 else ""
+                lines.append(f"{i}. {name} — {status}")
+            response = "\n".join(lines)
+        else:
+            owner_email = os.getenv("OWNER_EMAIL", "aikigai12@gmail.com")
+            pending_lists[chat_id] = {"leads": leads, "filter_label": label, "page": 0}
+            response = (
+                f"You have *{count:,} {label}* leads.\n\n"
+                f"How do you want them?\n\n"
+                f"1️⃣ Send to your email as Excel file\n"
+                f"2️⃣ Show top 20 here in Telegram\n"
+                f"3️⃣ Filter further — e.g. 'hot leads not contacted in 7 days'"
+            )
+
     # ── SET REMINDER ──────────────────────────────────────
     elif intent == "reminder_set":
         date = details.get("date", "").strip()
@@ -400,24 +502,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(response)
 
 
-async def send_daily_reminders(app):
-    """Called every day at 9 AM — sends due reminders to Sagar."""
+async def send_morning_briefing(app):
+    """Called every day at 9 AM — sends morning briefing + reminders to Sagar."""
     owner_id = os.getenv("OWNER_CHAT_ID")
     if not owner_id:
         return
-    due = get_todays_reminders()
-    if not due:
-        return
-    lines = ["🔔 *Good morning! Here are your reminders for today:*\n"]
-    for r in due:
-        time_part = f" at {r['time']}" if r['time'] and r['time'] != "09:00" else ""
-        lines.append(f"📝 {r['message']}{time_part}")
-        mark_reminder_done(r["row"])
-    message = "\n".join(lines)
+
+    # Morning briefing
+    briefing = build_morning_message()
     try:
-        await app.bot.send_message(chat_id=owner_id, text=message, parse_mode='Markdown')
+        await app.bot.send_message(chat_id=owner_id, text=briefing, parse_mode='Markdown')
     except Exception:
-        await app.bot.send_message(chat_id=owner_id, text=message)
+        await app.bot.send_message(chat_id=owner_id, text=briefing)
+
+    # Reminders for today
+    due = get_todays_reminders()
+    if due:
+        lines = ["🔔 *Reminders for today:*\n"]
+        for r in due:
+            time_part = f" at {r['time']}" if r['time'] and r['time'] != "09:00" else ""
+            lines.append(f"📝 {r['message']}{time_part}")
+            mark_reminder_done(r["row"])
+        reminders_msg = "\n".join(lines)
+        try:
+            await app.bot.send_message(chat_id=owner_id, text=reminders_msg, parse_mode='Markdown')
+        except Exception:
+            await app.bot.send_message(chat_id=owner_id, text=reminders_msg)
 
 
 def run_bot():
@@ -439,7 +549,7 @@ def run_bot():
     # 9 AM daily reminder scheduler
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
-    scheduler.add_job(send_daily_reminders, 'cron', hour=9, minute=0, args=[app])
+    scheduler.add_job(send_morning_briefing, 'cron', hour=9, minute=0, args=[app])
     scheduler.start()
 
     print("🤖 ARYA is running... Press Ctrl+C to stop")
