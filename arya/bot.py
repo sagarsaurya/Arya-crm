@@ -231,264 +231,239 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = ""
 
     try:
-      # ── ADD LEAD ──────────────────────────────────────────
-    if intent == "crm_add":
-        name = details.get("name", "").strip()
-        email = details.get("email", "").strip()
-        phone = details.get("phone", "").strip()
-
-        if not name:
-            response = "❌ Please provide at least a name.\nExample: _Add lead: Raj Sharma, raj@gmail.com, 9876543210_"
-        else:
-            response = add_lead(name, email, phone)
-            remember_lead(name, intent)
-
-    # ── UPDATE LEAD ───────────────────────────────────────
-    elif intent == "crm_update":
-        name = details.get("name", "").strip()
-        value = details.get("value", "").strip()
-        action = details.get("action", "").lower()
-        note = details.get("note", "").strip()
-
-        if not name:
-            response = "❌ Which lead? Please mention the name."
-        elif "note" in action or note:
-            response = add_note(name, note or value)
-            remember_lead(name, intent)
-        else:
-            response = update_lead_status(name, value)
-            remember_lead(name, intent)
-
-    # ── SET FOLLOW-UP DATE ────────────────────────────────
-    elif intent == "crm_followup":
-        name = details.get("name", "").strip()
-        date = details.get("date", "").strip()
-        if not name:
-            response = "❌ Which lead? Please mention the name."
-        elif not date:
-            response = "❌ Please provide the follow-up date."
-        else:
-            response = set_next_followup(name, date)
-            remember_lead(name, intent)
-
-    # ── READ CRM ──────────────────────────────────────────
-    elif intent == "crm_read":
-        name = details.get("name", "").strip()
-        action = details.get("action", "").lower()
-
-        if "followup" in action or "follow-up" in action or "today" in action:
-            if name:
-                # Asking about a specific lead's follow-up date
-                response = get_lead_details(name)
+        # ── ADD LEAD ──────────────────────────────────────────
+        if intent == "crm_add":
+            name = details.get("name", "").strip()
+            email = details.get("email", "").strip()
+            phone = details.get("phone", "").strip()
+            if not name:
+                response = "❌ Please provide at least a name.\nExample: _Add lead: Raj Sharma, raj@gmail.com, 9876543210_"
             else:
-                leads = get_todays_followups()
-                if leads:
-                    response = f"🔔 *Follow-ups due today — {len(leads)} leads:*\n"
-                    for i, lead in enumerate(leads, 1):
-                        status = lead[3] if len(lead) > 3 else "Unknown"
-                        response += f"{i}. {lead[0]} — {status}\n"
+                response = add_lead(name, email, phone)
+                remember_lead(name, intent)
+
+        # ── UPDATE LEAD ───────────────────────────────────────
+        elif intent == "crm_update":
+            name = details.get("name", "").strip()
+            value = details.get("value", "").strip()
+            action = details.get("action", "").lower()
+            note = details.get("note", "").strip()
+            if not name:
+                response = "❌ Which lead? Please mention the name."
+            elif "note" in action or note:
+                response = add_note(name, note or value)
+                remember_lead(name, intent)
+            else:
+                response = update_lead_status(name, value)
+                remember_lead(name, intent)
+
+        # ── SET FOLLOW-UP DATE ────────────────────────────────
+        elif intent == "crm_followup":
+            name = details.get("name", "").strip()
+            date = details.get("date", "").strip()
+            if not name:
+                response = "❌ Which lead? Please mention the name."
+            elif not date:
+                response = "❌ Please provide the follow-up date."
+            else:
+                response = set_next_followup(name, date)
+                remember_lead(name, intent)
+
+        # ── READ CRM ──────────────────────────────────────────
+        elif intent == "crm_read":
+            name = details.get("name", "").strip()
+            action = details.get("action", "").lower()
+            if "followup" in action or "follow-up" in action or "today" in action:
+                if name:
+                    response = get_lead_details(name)
                 else:
-                    response = "✅ No follow-ups due today!"
-        elif "summary" in action or "all" in action or not name:
-            response = get_crm_summary()
-        else:
-            response = get_lead_details(name)
+                    leads = get_todays_followups()
+                    if leads:
+                        response = f"🔔 *Follow-ups due today — {len(leads)} leads:*\n"
+                        for i, lead in enumerate(leads, 1):
+                            status = lead[3] if len(lead) > 3 else "Unknown"
+                            response += f"{i}. {lead[0]} — {status}\n"
+                    else:
+                        response = "✅ No follow-ups due today!"
+            elif "summary" in action or "all" in action or not name:
+                response = get_crm_summary()
+            else:
+                response = get_lead_details(name)
 
-    # ── BULK EMAIL ────────────────────────────────────────
-    elif intent == "email_bulk":
-        from arya.crm import get_leads_by_status
-        status_filter = details.get("value", "all").strip() or "all"
+        # ── BULK EMAIL ────────────────────────────────────────
+        elif intent == "email_bulk":
+            from arya.crm import get_leads_by_status
+            status_filter = details.get("value", "all").strip() or "all"
+            leads = get_leads_by_status(status_filter)
+            if not leads:
+                response = f"❌ No leads found with status *{status_filter}* and a valid email."
+            else:
+                label = f"*{status_filter}*" if status_filter != "all" else "all"
+                await update.message.reply_text(
+                    f"📤 Starting bulk email to {label} leads — *{len(leads)} emails* queued...\n\nThis may take a few minutes.",
+                    parse_mode='Markdown'
+                )
+                response = send_bulk_emails(leads)
 
-        leads = get_leads_by_status(status_filter)
+        # ── DIRECT EMAIL (draft + approval) ───────────────────
+        elif intent == "email_direct":
+            to_email = details.get("email", "").strip()
+            instruction = details.get("body", "").strip() or details.get("note", "").strip() or user_message
+            if not to_email:
+                response = "❌ Please provide an email address to send to."
+            else:
+                drafted = draft_email(to_email, instruction)
+                pending_emails[chat_id] = {"to": to_email, "subject": drafted["subject"], "body": drafted["body"]}
+                response = f"📝 *Here's your email draft:*\n\n📧 *To:* {to_email}\n📌 *Subject:* {drafted['subject']}\n\n{drafted['body']}\n\n✅ Reply *yes* to send\n✏️ Reply *edit: [what to change]* to revise\n❌ Reply *no* to cancel"
 
-        if not leads:
-            response = f"❌ No leads found with status *{status_filter}* and a valid email."
-        else:
-            # Send confirmation first
-            label = f"*{status_filter}*" if status_filter != "all" else "all"
-            await update.message.reply_text(
-                f"📤 Starting bulk email to {label} leads — *{len(leads)} emails* queued...\n\nThis may take a few minutes.",
-                parse_mode='Markdown'
-            )
+        # ── SEND EMAIL ────────────────────────────────────────
+        elif intent == "email_send":
+            from arya.crm import find_lead
+            name = details.get("name", "").strip()
+            if not name:
+                response = "❌ Which lead? Please mention the name."
+            else:
+                _, lead = find_lead(name)
+                if lead:
+                    email = lead[1] if len(lead) > 1 else ""
+                    response = send_followup_email(name, email)
+                else:
+                    response = f"❌ Lead '{name}' not found in CRM. Add them first!"
 
-            # Progress callback
-            async def progress(msg):
-                await update.message.reply_text(msg)
+        # ── CHECK REPLY ───────────────────────────────────────
+        elif intent == "email_read":
+            from arya.crm import find_lead
+            name = details.get("name", "").strip()
+            if not name:
+                response = "❌ Which lead? Please mention the name."
+            else:
+                _, lead = find_lead(name)
+                if lead:
+                    email = lead[1] if len(lead) > 1 else ""
+                    response = check_reply(name, email)
+                else:
+                    response = f"❌ Lead '{name}' not found in CRM."
 
-            import asyncio
-            loop = asyncio.get_event_loop()
+        # ── BOOK MEETING ──────────────────────────────────────
+        elif intent == "calendar_book":
+            name = details.get("name", "").strip()
+            date = details.get("date", "").strip()
+            time = details.get("time", "").strip()
+            if not name:
+                response = "❌ Who is the meeting with?"
+            elif not date or not time:
+                response = f"❌ Please provide date and time.\nExample: _Book call with {name} on 2026-04-28 at 15:00_"
+            else:
+                response = book_meeting(name, date, time)
 
-            def sync_callback(msg):
-                loop.call_soon_threadsafe(
-                    lambda: asyncio.ensure_future(update.message.reply_text(msg))
+        # ── READ CALENDAR ─────────────────────────────────────
+        elif intent == "calendar_read":
+            action = details.get("action", "").lower()
+            if "today" in action:
+                response = get_todays_meetings()
+            else:
+                response = get_upcoming_meetings(7)
+
+        # ── CAMPAIGN EMAIL ────────────────────────────────────
+        elif intent == "unknown" and any(word in user_message.lower() for word in ["campaign", "event email", "send campaign", "aios", "workshop email"]):
+            from arya.crm import get_leads_by_status
+            leads = get_leads_by_status("all")
+            if not leads:
+                response = "❌ No leads with email found in CRM."
+            else:
+                await update.message.reply_text(
+                    f"📤 Sending campaign email to *{len(leads)} leads* with banner...\nThis will take a few minutes.",
+                    parse_mode='Markdown'
+                )
+                response = send_campaign_to_all(leads)
+
+        # ── BULK STATUS UPDATE ────────────────────────────────
+        elif intent == "crm_bulk_update":
+            import json as _json
+            value = details.get("value", "")
+            note = details.get("note", "")
+            updates = []
+            if isinstance(value, str) and value.startswith("first_"):
+                try:
+                    count = int(value.split("_")[1])
+                    hot_status = details.get("action", "Hot")
+                    rest_status = note or "Warm"
+                    all_leads = get_all_leads()[1:]
+                    for i, row in enumerate(all_leads):
+                        if row and row[0]:
+                            status = hot_status if i < count else rest_status
+                            updates.append((row[0], status))
+                except Exception:
+                    pass
+            elif isinstance(value, list):
+                updates = [(item["name"], item["status"]) for item in value if "name" in item]
+            elif isinstance(value, str):
+                try:
+                    parsed = _json.loads(value)
+                    if isinstance(parsed, list):
+                        updates = [(item["name"], item["status"]) for item in parsed if "name" in item]
+                except Exception:
+                    pass
+            if updates:
+                response = bulk_update_status(updates)
+            else:
+                response = intent_data.get("reply") or "❌ I couldn't figure out which leads to update. Please list them like: 'mark Raj as Hot and Priya as Warm'"
+
+        # ── ADD COLUMN ────────────────────────────────────────
+        elif intent == "crm_add_column":
+            col_name = details.get("value", "").strip()
+            if not col_name:
+                response = "❌ What should the column be called?"
+            else:
+                response = add_column(col_name)
+
+        # ── LIST LEADS ────────────────────────────────────────
+        elif intent == "crm_list":
+            from arya.crm import get_leads_by_status
+            filter_val = details.get("value", "all").strip() or "all"
+            leads = get_leads_by_status(filter_val)
+            label = filter_val.title() if filter_val != "all" else "All"
+            count = len(leads)
+            if count == 0:
+                response = f"❌ No *{label}* leads found."
+            elif count <= 20:
+                lines = [f"📋 *{label} leads — {count} total:*\n"]
+                for i, lead in enumerate(leads, 1):
+                    name = lead[0] if lead else "?"
+                    status = lead[3] if len(lead) > 3 else ""
+                    lines.append(f"{i}. {name} — {status}")
+                response = "\n".join(lines)
+            else:
+                pending_lists[chat_id] = {"leads": leads, "filter_label": label, "page": 0}
+                response = (
+                    f"You have *{count:,} {label}* leads.\n\n"
+                    f"How do you want them?\n\n"
+                    f"1️⃣ Send to your email as Excel file\n"
+                    f"2️⃣ Show top 20 here in Telegram\n"
+                    f"3️⃣ Filter further — e.g. 'hot leads not contacted in 7 days'"
                 )
 
-            response = send_bulk_emails(leads)
-
-    # ── DIRECT EMAIL (draft + approval) ───────────────────
-    elif intent == "email_direct":
-        to_email = details.get("email", "").strip()
-        instruction = details.get("body", "").strip() or details.get("note", "").strip() or user_message
-        if not to_email:
-            response = "❌ Please provide an email address to send to."
-        else:
-            drafted = draft_email(to_email, instruction)
-            pending_emails[chat_id] = {"to": to_email, "subject": drafted["subject"], "body": drafted["body"]}
-            response = f"📝 *Here's your email draft:*\n\n📧 *To:* {to_email}\n📌 *Subject:* {drafted['subject']}\n\n{drafted['body']}\n\n✅ Reply *yes* to send\n✏️ Reply *edit: [what to change]* to revise\n❌ Reply *no* to cancel"
-
-    # ── SEND EMAIL ────────────────────────────────────────
-    elif intent == "email_send":
-        from arya.crm import find_lead
-        name = details.get("name", "").strip()
-
-        if not name:
-            response = "❌ Which lead? Please mention the name."
-        else:
-            _, lead = find_lead(name)
-            if lead:
-                email = lead[1] if len(lead) > 1 else ""
-                response = send_followup_email(name, email)
+        # ── SET REMINDER ──────────────────────────────────────
+        elif intent == "reminder_set":
+            date = details.get("date", "").strip()
+            time = details.get("time", "").strip()
+            message = details.get("note", "").strip() or user_message
+            if not date:
+                response = "❌ Please mention the date for the reminder."
             else:
-                response = f"❌ Lead '{name}' not found in CRM. Add them first!"
+                response = save_reminder(date, time, message)
 
-    # ── CHECK REPLY ───────────────────────────────────────
-    elif intent == "email_read":
-        from arya.crm import find_lead
-        name = details.get("name", "").strip()
+        # ── READ REMINDERS ────────────────────────────────────
+        elif intent == "reminder_read":
+            response = get_all_pending_reminders()
 
-        if not name:
-            response = "❌ Which lead? Please mention the name."
+        # ── REPORT ────────────────────────────────────────────
+        elif intent == "report":
+            response = generate_daily_report()
+
+        # ── CHAT / UNKNOWN ────────────────────────────────────
         else:
-            _, lead = find_lead(name)
-            if lead:
-                email = lead[1] if len(lead) > 1 else ""
-                response = check_reply(name, email)
-            else:
-                response = f"❌ Lead '{name}' not found in CRM."
-
-    # ── BOOK MEETING ──────────────────────────────────────
-    elif intent == "calendar_book":
-        name = details.get("name", "").strip()
-        date = details.get("date", "").strip()
-        time = details.get("time", "").strip()
-
-        if not name:
-            response = "❌ Who is the meeting with?"
-        elif not date or not time:
-            response = f"❌ Please provide date and time.\nExample: _Book call with {name} on 2026-04-28 at 15:00_"
-        else:
-            response = book_meeting(name, date, time)
-
-    # ── READ CALENDAR ─────────────────────────────────────
-    elif intent == "calendar_read":
-        action = details.get("action", "").lower()
-        if "today" in action:
-            response = get_todays_meetings()
-        else:
-            response = get_upcoming_meetings(7)
-
-    # ── CAMPAIGN EMAIL ────────────────────────────────────
-    elif intent == "unknown" and any(word in user_message.lower() for word in ["campaign", "event email", "send campaign", "aios", "workshop email"]):
-        from arya.crm import get_leads_by_status
-        leads = get_leads_by_status("all")
-        if not leads:
-            response = "❌ No leads with email found in CRM."
-        else:
-            await update.message.reply_text(
-                f"📤 Sending campaign email to *{len(leads)} leads* with banner...\nThis will take a few minutes.",
-                parse_mode='Markdown'
-            )
-            response = send_campaign_to_all(leads)
-
-    # ── BULK STATUS UPDATE ────────────────────────────────
-    elif intent == "crm_bulk_update":
-        import json as _json
-        value = details.get("value", "")
-        note = details.get("note", "")
-        updates = []
-        # Handle "first N leads are X, rest are Y"
-        if isinstance(value, str) and value.startswith("first_"):
-            try:
-                count = int(value.split("_")[1])
-                hot_status = details.get("action", "Hot")
-                rest_status = note or "Warm"
-                all_leads = get_all_leads()[1:]  # skip header
-                for i, row in enumerate(all_leads):
-                    if row and row[0]:
-                        status = hot_status if i < count else rest_status
-                        updates.append((row[0], status))
-            except Exception:
-                pass
-        elif isinstance(value, list):
-            updates = [(item["name"], item["status"]) for item in value if "name" in item]
-        elif isinstance(value, str):
-            try:
-                parsed = _json.loads(value)
-                if isinstance(parsed, list):
-                    updates = [(item["name"], item["status"]) for item in parsed if "name" in item]
-            except Exception:
-                pass
-        if updates:
-            response = bulk_update_status(updates)
-        else:
-            response = intent_data.get("reply") or "❌ I couldn't figure out which leads to update. Please list them like: 'mark Raj as Hot and Priya as Warm'"
-
-    # ── ADD COLUMN ────────────────────────────────────────
-    elif intent == "crm_add_column":
-        col_name = details.get("value", "").strip()
-        if not col_name:
-            response = "❌ What should the column be called?"
-        else:
-            response = add_column(col_name)
-
-    # ── LIST LEADS ────────────────────────────────────────
-    elif intent == "crm_list":
-        from arya.crm import get_leads_by_status
-        filter_val = details.get("value", "all").strip() or "all"
-        leads = get_leads_by_status(filter_val)
-        label = filter_val.title() if filter_val != "all" else "All"
-        count = len(leads)
-        if count == 0:
-            response = f"❌ No *{label}* leads found."
-        elif count <= 20:
-            lines = [f"📋 *{label} leads — {count} total:*\n"]
-            for i, lead in enumerate(leads, 1):
-                name = lead[0] if lead else "?"
-                status = lead[3] if len(lead) > 3 else ""
-                lines.append(f"{i}. {name} — {status}")
-            response = "\n".join(lines)
-        else:
-            owner_email = os.getenv("OWNER_EMAIL", "aikigai12@gmail.com")
-            pending_lists[chat_id] = {"leads": leads, "filter_label": label, "page": 0}
-            response = (
-                f"You have *{count:,} {label}* leads.\n\n"
-                f"How do you want them?\n\n"
-                f"1️⃣ Send to your email as Excel file\n"
-                f"2️⃣ Show top 20 here in Telegram\n"
-                f"3️⃣ Filter further — e.g. 'hot leads not contacted in 7 days'"
-            )
-
-    # ── SET REMINDER ──────────────────────────────────────
-    elif intent == "reminder_set":
-        date = details.get("date", "").strip()
-        time = details.get("time", "").strip()
-        message = details.get("note", "").strip() or user_message
-        if not date:
-            response = "❌ Please mention the date for the reminder."
-        else:
-            response = save_reminder(date, time, message)
-
-    # ── READ REMINDERS ────────────────────────────────────
-    elif intent == "reminder_read":
-        response = get_all_pending_reminders()
-
-    # ── REPORT ────────────────────────────────────────────
-    elif intent == "report":
-        response = generate_daily_report()
-
-      # ── CHAT / UNKNOWN ────────────────────────────────────
-      else:
-          response = intent_data.get("reply", "🤔 I didn't understand that. Type /help to see what I can do!")
+            response = intent_data.get("reply", "🤔 I didn't understand that. Type /help to see what I can do!")
 
     except Exception as e:
         response = f"⚠️ Something went wrong: {str(e)}\n\nPlease try again."
