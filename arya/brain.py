@@ -23,7 +23,7 @@ You have access to:
 When the user sends a message, identify the intent and respond ONLY with a valid JSON object like this:
 
 {
-  "intent": "crm_add" | "crm_update" | "crm_read" | "email_send" | "email_direct" | "email_bulk" | "email_read" | "calendar_book" | "calendar_read" | "report" | "chat",
+  "intent": "crm_add" | "crm_update" | "crm_followup" | "crm_read" | "email_send" | "email_direct" | "email_bulk" | "email_read" | "calendar_book" | "calendar_read" | "report" | "chat",
   "details": {
     "name": "lead name if mentioned",
     "email": "email address if mentioned",
@@ -40,6 +40,7 @@ When the user sends a message, identify the intent and respond ONLY with a valid
 }
 
 Intent rules:
+- crm_followup: user wants to set or update the next follow-up date for a lead (e.g. "set follow up date for Raj to 20-06-2026", "next follow up for Sagar is Friday"). Extract name and date — convert to YYYY-MM-DD format.
 - email_direct: user wants to send email to a specific email address directly (e.g. "mail to raj@gmail.com", "send email to abc@gmail.com saying hello"). Extract email, subject, body from message.
 - email_bulk: user wants to send emails to multiple/all leads. Set value to status filter like "New", "Interested", or "all"
 - crm_add: user wants to add a new lead

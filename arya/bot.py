@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from arya.brain import understand_intent, draft_email
 from arya.crm import (
     add_lead, update_lead_status, add_note,
-    get_todays_followups, get_lead_details, get_crm_summary
+    get_todays_followups, get_lead_details, get_crm_summary, set_next_followup
 )
 from arya.email_agent import send_followup_email, check_reply, send_bulk_emails, send_direct_email
 from arya.campaign_email import send_campaign_to_all
@@ -170,6 +170,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = add_note(name, note or value)
         else:
             response = update_lead_status(name, value)
+
+    # ── SET FOLLOW-UP DATE ────────────────────────────────
+    elif intent == "crm_followup":
+        name = details.get("name", "").strip()
+        date = details.get("date", "").strip()
+        if not name:
+            response = "❌ Which lead? Please mention the name."
+        elif not date:
+            response = "❌ Please provide the follow-up date."
+        else:
+            response = set_next_followup(name, date)
 
     # ── READ CRM ──────────────────────────────────────────
     elif intent == "crm_read":
