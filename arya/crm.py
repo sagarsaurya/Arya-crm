@@ -11,7 +11,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
-RANGE = "Sheet1!A:H"
+RANGE = "Sheet1!A:Z"
 
 # Column mapping
 COLUMNS = {
