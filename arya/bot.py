@@ -122,7 +122,17 @@ Just type naturally — I'll understand! 💪
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle all incoming text messages"""
+    try:
+        await _handle_message_inner(update, context)
+    except Exception as e:
+        print(f"[FATAL] handle_message crashed: {e}", flush=True)
+        try:
+            await update.message.reply_text("⚠️ Something went wrong on my end. I'm still here — please try again!")
+        except Exception:
+            pass
 
+
+async def _handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
     chat_id = str(update.message.chat_id)
 
