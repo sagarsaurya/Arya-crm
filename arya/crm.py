@@ -230,6 +230,32 @@ def get_leads_by_status(status_filter: str = "all") -> list:
     ]
 
 
+def add_column(column_name: str) -> str:
+    """Add a new column header to the CRM sheet."""
+    try:
+        service = get_sheets_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SHEET_ID,
+            range="Sheet1!1:1"
+        ).execute()
+        headers = result.get('values', [[]])[0]
+        # Check if column already exists
+        if column_name.lower() in [h.lower() for h in headers]:
+            return f"⚠️ Column *{column_name}* already exists in the sheet."
+        # Append new header at end
+        next_col_index = len(headers) + 1
+        col_letter = chr(ord('A') + len(headers))  # works up to column Z
+        service.spreadsheets().values().update(
+            spreadsheetId=SHEET_ID,
+            range=f"Sheet1!{col_letter}1",
+            valueInputOption='RAW',
+            body={'values': [[column_name]]}
+        ).execute()
+        return f"✅ Column *{column_name}* added to your CRM sheet!"
+    except Exception as e:
+        return f"❌ Error adding column: {str(e)}"
+
+
 def get_crm_summary() -> str:
     """Get a summary count of all leads by status"""
     leads = get_all_leads()

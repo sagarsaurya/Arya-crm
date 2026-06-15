@@ -6,8 +6,9 @@ from dotenv import load_dotenv
 from arya.brain import understand_intent, draft_email
 from arya.crm import (
     add_lead, update_lead_status, add_note,
-    get_todays_followups, get_lead_details, get_crm_summary, set_next_followup
+    get_todays_followups, get_lead_details, get_crm_summary, set_next_followup, add_column
 )
+from arya.memory import remember_lead, get_last_lead
 from arya.email_agent import send_followup_email, check_reply, send_bulk_emails, send_direct_email
 from arya.campaign_email import send_campaign_to_all
 from arya.calendar_agent import book_meeting, get_todays_meetings, get_upcoming_meetings
@@ -144,6 +145,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     intent = intent_data.get("intent", "unknown")
     details = intent_data.get("details", {})
 
+    # If no name provided, fall back to last known lead from long-term memory
+    if not details.get("name") and intent in ("crm_update", "crm_followup", "crm_read", "email_send", "email_read"):
+        last = get_last_lead()
+        if last:
+            details["name"] = last
+
     response = ""
 
     # ── ADD LEAD ──────────────────────────────────────────
@@ -156,6 +163,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = "❌ Please provide at least a name.\nExample: _Add lead: Raj Sharma, raj@gmail.com, 9876543210_"
         else:
             response = add_lead(name, email, phone)
+            remember_lead(name, intent)
 
     # ── UPDATE LEAD ───────────────────────────────────────
     elif intent == "crm_update":
@@ -168,8 +176,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = "❌ Which lead? Please mention the name."
         elif "note" in action or note:
             response = add_note(name, note or value)
+            remember_lead(name, intent)
         else:
             response = update_lead_status(name, value)
+            remember_lead(name, intent)
 
     # ── SET FOLLOW-UP DATE ────────────────────────────────
     elif intent == "crm_followup":
@@ -181,6 +191,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = "❌ Please provide the follow-up date."
         else:
             response = set_next_followup(name, date)
+            remember_lead(name, intent)
 
     # ── READ CRM ──────────────────────────────────────────
     elif intent == "crm_read":
@@ -310,6 +321,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='Markdown'
             )
             response = send_campaign_to_all(leads)
+
+    # ── ADD COLUMN ────────────────────────────────────────
+    elif intent == "crm_add_column":
+        col_name = details.get("value", "").strip()
+        if not col_name:
+            response = "❌ What should the column be called?"
+        else:
+            response = add_column(col_name)
 
     # ── REPORT ────────────────────────────────────────────
     elif intent == "report":
