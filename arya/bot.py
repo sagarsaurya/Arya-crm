@@ -11,8 +11,17 @@ from arya.crm import (
 )
 from arya.memory import remember_lead, get_last_lead
 from arya.reminders import save_reminder, get_all_pending_reminders, get_todays_reminders, mark_reminder_done
-from arya.lead_export import send_leads_excel_email
-from arya.morning_briefing import build_morning_message
+try:
+    from arya.lead_export import send_leads_excel_email
+except Exception as _e:
+    print(f"⚠️ lead_export not loaded: {_e}", flush=True)
+    def send_leads_excel_email(*a, **k): return "❌ Excel export not available right now."
+
+try:
+    from arya.morning_briefing import build_morning_message
+except Exception as _e:
+    print(f"⚠️ morning_briefing not loaded: {_e}", flush=True)
+    def build_morning_message(): return "☀️ Good morning Sagar!"
 from arya.email_agent import send_followup_email, check_reply, send_bulk_emails, send_direct_email
 from arya.campaign_email import send_campaign_to_all
 from arya.calendar_agent import book_meeting, get_todays_meetings, get_upcoming_meetings
@@ -533,10 +542,14 @@ def run_bot():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # 9 AM daily reminder scheduler
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
-    scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
-    scheduler.add_job(send_morning_briefing, 'cron', hour=9, minute=0, args=[app])
-    scheduler.start()
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
+        scheduler.add_job(send_morning_briefing, 'cron', hour=9, minute=0, args=[app])
+        scheduler.start()
+        print("✅ Morning briefing scheduler started (9 AM IST)", flush=True)
+    except Exception as e:
+        print(f"⚠️ Scheduler not started: {e}", flush=True)
 
     print("🤖 ARYA is running... Press Ctrl+C to stop")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
