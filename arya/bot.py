@@ -43,6 +43,9 @@ pending_emails = {}
 # Pending list delivery choice: chat_id -> {leads, filter_label, page}
 pending_lists = {}
 
+# Pending promised actions: chat_id -> {type, ...params}
+pending_actions = {}
+
 # Conversation history: chat_id -> [{role, content}, ...]
 conversation_history = {}
 
@@ -154,6 +157,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(preview, parse_mode='Markdown')
             except Exception:
                 await update.message.reply_text(preview)
+            return
+
+    # ── PENDING ACTION CONFIRMATION ───────────────────────
+    if chat_id in pending_actions:
+        msg_lower = user_message.lower().strip()
+        if msg_lower in ["yes", "yes pls", "yes please", "haan", "ha", "ok", "do it", "go ahead", "confirm"]:
+            action = pending_actions.pop(chat_id)
+            if action["type"] == "bulk_update":
+                result = bulk_update_status(action["updates"], target_column=action["column"])
+                try:
+                    await update.message.reply_text(result, parse_mode='Markdown')
+                except Exception:
+                    await update.message.reply_text(result)
+                return
+        elif msg_lower in ["no", "cancel", "nahi", "nope"]:
+            pending_actions.pop(chat_id)
+            await update.message.reply_text("❌ Cancelled. What else can I help you with?")
             return
 
     # ── LEAD LIST DELIVERY CHOICE ─────────────────────────
@@ -402,6 +422,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     count = int(value.split("_")[1])
                     first_val = details.get("action", "Hot")
                     rest_val = note or "Warm"
+                    # Validate values — never allow empty
+                    if not first_val.strip(): first_val = "Hot"
+                    if not rest_val.strip(): rest_val = "Warm"
                     all_leads = get_all_leads()[1:]
                     for i, row in enumerate(all_leads):
                         if row and row[0]:
@@ -409,16 +432,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception:
                     pass
             elif isinstance(value, list):
-                updates = [(item.get("name",""), item.get("status","")) for item in value if "name" in item]
+                updates = [(item.get("name",""), item.get("status","")) for item in value if "name" in item and item.get("status","").strip()]
             elif isinstance(value, str):
                 try:
                     parsed = _json.loads(value)
                     if isinstance(parsed, list):
-                        updates = [(item.get("name",""), item.get("status","")) for item in parsed if "name" in item]
+                        updates = [(item.get("name",""), item.get("status","")) for item in parsed if "name" in item and item.get("status","").strip()]
                 except Exception:
                     pass
+
+            # Filter out any blank values — never write empty to sheet
+            updates = [(n, v) for n, v in updates if n.strip() and v.strip()]
+
             if updates:
-                response = bulk_update_status(updates, target_column=target_col)
+                # Store as pending action so user can confirm before writing
+                pending_actions[chat_id] = {"type": "bulk_update", "updates": updates, "column": target_col}
+                preview_lines = [f"📋 Here's what I'll update in *{target_col}*:\n"]
+                for name, val in updates:
+                    preview_lines.append(f"• {name} → {val}")
+                preview_lines.append(f"\n✅ Reply *yes* to confirm or *no* to cancel")
+                response = "\n".join(preview_lines)
             else:
                 response = intent_data.get("reply") or "❌ I couldn't figure out which leads to update. Please say something like: 'mark Raj as Hot and Priya as Warm in Lead Category'"
 
